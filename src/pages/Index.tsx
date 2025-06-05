@@ -1,10 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Package, AlertTriangle } from "lucide-react";
+import { Plus, AlertTriangle } from "lucide-react";
 import { SalesModal } from "@/components/SalesModal";
-import { Link } from "react-router-dom";
 
 interface Product {
   productID: string;
@@ -103,22 +101,13 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Kasir & Stok Barang</h1>
-            <Link to="/produk">
-              <Button variant="outline" className="flex items-center gap-2">
-                <Package className="h-4 w-4" />
-                Kelola Produk
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Welcome Section */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard Kasir</h1>
+          <p className="text-gray-600">Selamat datang di sistem kasir dan manajemen stok</p>
+        </div>
+
         {/* Profit Card */}
         <Card className="mb-8 bg-gradient-to-r from-green-500 to-green-600 text-white">
           <CardHeader>
