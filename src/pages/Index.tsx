@@ -1,87 +1,67 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, AlertTriangle } from "lucide-react";
 import { SalesModal } from "@/components/SalesModal";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Product {
-  productID: string;
-  productName: string;
-  purchasePrice: number;
-  sellingPrice: number;
-  initialStock: number;
-  currentStock: number;
-}
-
-interface Sale {
-  saleID: string;
-  productID_ref: string;
-  quantitySold: number;
-  saleTimestamp: string;
-  totalRevenue: number;
-  totalCost: number;
-  totalProfit: number;
+  id: string;
+  product_name: string;
+  purchase_price: number;
+  selling_price: number;
+  initial_stock: number;
+  current_stock: number;
 }
 
 const Index = () => {
   const [products, setProducts] = useState<Product[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [todayProfit, setTodayProfit] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  // Load data from localStorage on component mount
   useEffect(() => {
-    const savedProducts = localStorage.getItem('products');
-    const savedSales = localStorage.getItem('sales');
-    
-    if (savedProducts) {
-      setProducts(JSON.parse(savedProducts));
-    } else {
-      // Initialize with sample data
-      const sampleProducts: Product[] = [
-        {
-          productID: "GGM01",
-          productName: "Gudang Garam Merah 12",
-          purchasePrice: 18000,
-          sellingPrice: 20000,
-          initialStock: 50,
-          currentStock: 50
-        },
-        {
-          productID: "KRT01", 
-          productName: "Kretek 234 16",
-          purchasePrice: 22000,
-          sellingPrice: 25000,
-          initialStock: 30,
-          currentStock: 30
-        },
-        {
-          productID: "SMW01",
-          productName: "Sampoerna Mild 16", 
-          purchasePrice: 25000,
-          sellingPrice: 28000,
-          initialStock: 40,
-          currentStock: 40
-        }
-      ];
-      setProducts(sampleProducts);
-      localStorage.setItem('products', JSON.stringify(sampleProducts));
-    }
-    
-    if (savedSales) {
-      setSales(JSON.parse(savedSales));
-    }
+    fetchProducts();
+    fetchTodayProfit();
   }, []);
 
-  // Calculate today's profit
-  useEffect(() => {
-    const today = new Date().toDateString();
-    const todaySales = sales.filter(sale => 
-      new Date(sale.saleTimestamp).toDateString() === today
-    );
-    const profit = todaySales.reduce((sum, sale) => sum + sale.totalProfit, 0);
-    setTodayProfit(profit);
-  }, [sales]);
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('product_name');
+
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTodayProfit = async () => {
+    try {
+      const today = new Date();
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+
+      const { data, error } = await supabase
+        .from('sales')
+        .select('total_profit')
+        .gte('sale_timestamp', startOfDay.toISOString())
+        .lt('sale_timestamp', endOfDay.toISOString());
+
+      if (error) throw error;
+
+      const profit = data?.reduce((sum, sale) => sum + Number(sale.total_profit), 0) || 0;
+      setTodayProfit(profit);
+    } catch (error) {
+      console.error('Error fetching today profit:', error);
+    }
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -91,13 +71,20 @@ const Index = () => {
     }).format(amount);
   };
 
-  const handleSaleComplete = (updatedProducts: Product[], newSale: Sale) => {
-    setProducts(updatedProducts);
-    setSales(prev => [...prev, newSale]);
-    localStorage.setItem('products', JSON.stringify(updatedProducts));
-    localStorage.setItem('sales', JSON.stringify([...sales, newSale]));
-    setIsModalOpen(false);
+  const handleSaleComplete = () => {
+    fetchProducts();
+    fetchTodayProfit();
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center">Loading...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -138,21 +125,21 @@ const Index = () => {
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {products.map((product) => (
-                <Card key={product.productID} className="border-l-4 border-l-blue-500">
+                <Card key={product.id} className="border-l-4 border-l-blue-500">
                   <CardContent className="p-4">
-                    <h3 className="font-semibold text-lg mb-2">{product.productName}</h3>
+                    <h3 className="font-semibold text-lg mb-2">{product.product_name}</h3>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Harga Jual:</span>
-                        <span className="font-medium">{formatCurrency(product.sellingPrice)}</span>
+                        <span className="font-medium">{formatCurrency(product.selling_price)}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Stok:</span>
                         <span className={`font-medium flex items-center gap-1 ${
-                          product.currentStock < 10 ? 'text-red-600' : 'text-green-600'
+                          product.current_stock < 10 ? 'text-red-600' : 'text-green-600'
                         }`}>
-                          {product.currentStock < 10 && <AlertTriangle className="h-4 w-4" />}
-                          {product.currentStock}
+                          {product.current_stock < 10 && <AlertTriangle className="h-4 w-4" />}
+                          {product.current_stock}
                         </span>
                       </div>
                     </div>
@@ -168,7 +155,6 @@ const Index = () => {
       <SalesModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        products={products}
         onSaleComplete={handleSaleComplete}
       />
     </div>

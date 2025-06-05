@@ -9,7 +9,98 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      customers: {
+        Row: {
+          created_at: string
+          customer_name: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          customer_name: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          customer_name?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          created_at: string
+          current_stock: number
+          id: string
+          initial_stock: number
+          product_name: string
+          purchase_price: number
+          selling_price: number
+        }
+        Insert: {
+          created_at?: string
+          current_stock: number
+          id: string
+          initial_stock: number
+          product_name: string
+          purchase_price: number
+          selling_price: number
+        }
+        Update: {
+          created_at?: string
+          current_stock?: number
+          id?: string
+          initial_stock?: number
+          product_name?: string
+          purchase_price?: number
+          selling_price?: number
+        }
+        Relationships: []
+      }
+      sales: {
+        Row: {
+          customer_id: string | null
+          id: string
+          payment_status: string
+          product_id: string
+          quantity_sold: number
+          sale_timestamp: string
+          total_cost: number
+          total_profit: number
+          total_revenue: number
+        }
+        Insert: {
+          customer_id?: string | null
+          id?: string
+          payment_status?: string
+          product_id: string
+          quantity_sold: number
+          sale_timestamp?: string
+          total_cost: number
+          total_profit: number
+          total_revenue: number
+        }
+        Update: {
+          customer_id?: string | null
+          id?: string
+          payment_status?: string
+          product_id?: string
+          quantity_sold?: number
+          sale_timestamp?: string
+          total_cost?: number
+          total_profit?: number
+          total_revenue?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -8,6 +8,7 @@ import Navigation from "./components/Navigation";
 import Index from "./pages/Index";
 import ProductManagement from "./pages/ProductManagement";
 import SalesManagement from "./pages/SalesManagement";
+import DebtManagement from "./pages/DebtManagement";
 import StockUpdate from "./pages/StockUpdate";
 import NotFound from "./pages/NotFound";
 
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/produk" element={<ProductManagement />} />
             <Route path="/penjualan" element={<SalesManagement />} />
+            <Route path="/hutang" element={<DebtManagement />} />
             <Route path="/update-stok" element={<StockUpdate />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
