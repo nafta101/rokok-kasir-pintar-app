@@ -4,29 +4,37 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Edit, Trash2, Plus } from "lucide-react";
+import { Edit, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Product {
-  productID: string;
-  productName: string;
-  purchasePrice: number;
-  sellingPrice: number;
-  initialStock: number;
-  currentStock: number;
+  id: string;
+  product_name: string;
+  purchase_price: number;
+  selling_price: number;
+  current_stock: number;
 }
 
 interface Sale {
-  saleID: string;
-  productID_ref: string;
-  quantitySold: number;
-  saleTimestamp: string;
-  totalRevenue: number;
-  totalCost: number;
-  totalProfit: number;
+  id: string;
+  product_id: string;
+  quantity_sold: number;
+  sale_timestamp: string;
+  total_revenue: number;
+  total_cost: number;
+  total_profit: number;
+  payment_status: string;
+  customer_id?: string;
+  products?: {
+    product_name: string;
+  };
+  customers?: {
+    customer_name: string;
+  };
 }
 
 const SalesManagement = () => {
@@ -35,38 +43,60 @@ const SalesManagement = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [formData, setFormData] = useState({
-    productID_ref: '',
-    quantitySold: ''
+    product_id: '',
+    quantity_sold: ''
   });
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    const savedSales = localStorage.getItem('sales');
-    const savedProducts = localStorage.getItem('products');
-    
-    if (savedSales) {
-      setSales(JSON.parse(savedSales));
-    }
-    
-    if (savedProducts) {
-      setProducts(JSON.parse(savedProducts));
-    }
+    fetchSales();
+    fetchProducts();
   }, []);
 
-  const saveSales = (updatedSales: Sale[]) => {
-    setSales(updatedSales);
-    localStorage.setItem('sales', JSON.stringify(updatedSales));
+  const fetchSales = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          products (product_name),
+          customers (customer_name)
+        `)
+        .order('sale_timestamp', { ascending: false });
+
+      if (error) throw error;
+      setSales(data || []);
+    } catch (error) {
+      console.error('Error fetching sales:', error);
+      toast({
+        title: "Error",
+        description: "Gagal mengambil data penjualan",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const saveProducts = (updatedProducts: Product[]) => {
-    setProducts(updatedProducts);
-    localStorage.setItem('products', JSON.stringify(updatedProducts));
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('product_name');
+
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const selectedProduct = products.find(p => p.productID === formData.productID_ref);
+    const selectedProduct = products.find(p => p.id === formData.product_id);
     if (!selectedProduct) {
       toast({
         title: "Error",
@@ -76,86 +106,119 @@ const SalesManagement = () => {
       return;
     }
 
-    const quantity = parseInt(formData.quantitySold);
+    const quantity = parseInt(formData.quantity_sold);
     
     if (editingSale) {
-      // Update existing sale
-      const oldQuantity = editingSale.quantitySold;
-      const quantityDiff = quantity - oldQuantity;
-      
-      // Check if there's enough stock for the difference
-      if (quantityDiff > selectedProduct.currentStock) {
+      try {
+        const oldQuantity = editingSale.quantity_sold;
+        const quantityDiff = quantity - oldQuantity;
+        
+        // Check if there's enough stock for the difference
+        if (quantityDiff > selectedProduct.current_stock) {
+          toast({
+            title: "Error",
+            description: `Stok tidak mencukupi! Stok tersisa: ${selectedProduct.current_stock}`,
+            variant: "destructive"
+          });
+          return;
+        }
+
+        const totalRevenue = selectedProduct.selling_price * quantity;
+        const totalCost = selectedProduct.purchase_price * quantity;
+        const totalProfit = totalRevenue - totalCost;
+
+        // Update sale record
+        const { error: saleError } = await supabase
+          .from('sales')
+          .update({
+            product_id: formData.product_id,
+            quantity_sold: quantity,
+            total_revenue: totalRevenue,
+            total_cost: totalCost,
+            total_profit: totalProfit
+          })
+          .eq('id', editingSale.id);
+
+        if (saleError) throw saleError;
+
+        // Update product stock
+        const newStock = selectedProduct.current_stock - quantityDiff;
+        const { error: stockError } = await supabase
+          .from('products')
+          .update({ current_stock: newStock })
+          .eq('id', selectedProduct.id);
+
+        if (stockError) throw stockError;
+
+        toast({
+          title: "Transaksi berhasil diperbarui",
+          description: `Penjualan ${selectedProduct.product_name} telah diperbarui.`
+        });
+
+        // Refresh sales data - CRITICAL FIX for Bug 2
+        await fetchSales();
+        await fetchProducts();
+
+        resetForm();
+        setIsDialogOpen(false);
+      } catch (error) {
+        console.error('Error updating sale:', error);
         toast({
           title: "Error",
-          description: `Stok tidak mencukupi! Stok tersisa: ${selectedProduct.currentStock}`,
+          description: "Gagal memperbarui transaksi",
           variant: "destructive"
         });
-        return;
       }
-
-      const totalRevenue = selectedProduct.sellingPrice * quantity;
-      const totalCost = selectedProduct.purchasePrice * quantity;
-      const totalProfit = totalRevenue - totalCost;
-
-      const updatedSale: Sale = {
-        ...editingSale,
-        productID_ref: formData.productID_ref,
-        quantitySold: quantity,
-        totalRevenue,
-        totalCost,
-        totalProfit
-      };
-
-      const updatedSales = sales.map(s => 
-        s.saleID === editingSale.saleID ? updatedSale : s
-      );
-      saveSales(updatedSales);
-
-      // Update product stock
-      const updatedProducts = products.map(p => 
-        p.productID === selectedProduct.productID 
-          ? { ...p, currentStock: p.currentStock - quantityDiff }
-          : p
-      );
-      saveProducts(updatedProducts);
-
-      toast({
-        title: "Transaksi berhasil diperbarui",
-        description: `Penjualan ${selectedProduct.productName} telah diperbarui.`
-      });
     }
-
-    resetForm();
-    setIsDialogOpen(false);
   };
 
   const handleEdit = (sale: Sale) => {
     setEditingSale(sale);
     setFormData({
-      productID_ref: sale.productID_ref,
-      quantitySold: sale.quantitySold.toString()
+      product_id: sale.product_id,
+      quantity_sold: sale.quantity_sold.toString()
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (saleID: string) => {
+  const handleDelete = async (saleId: string) => {
     if (window.confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) {
-      const saleToDelete = sales.find(s => s.saleID === saleID);
-      if (saleToDelete) {
-        // Return stock to product
-        const updatedProducts = products.map(p => 
-          p.productID === saleToDelete.productID_ref 
-            ? { ...p, currentStock: p.currentStock + saleToDelete.quantitySold }
-            : p
-        );
-        saveProducts(updatedProducts);
+      try {
+        const saleToDelete = sales.find(s => s.id === saleId);
+        if (!saleToDelete) return;
 
-        const updatedSales = sales.filter(s => s.saleID !== saleID);
-        saveSales(updatedSales);
+        // Delete sale record
+        const { error: deleteError } = await supabase
+          .from('sales')
+          .delete()
+          .eq('id', saleId);
+
+        if (deleteError) throw deleteError;
+
+        // Return stock to product
+        const { error: stockError } = await supabase
+          .from('products')
+          .update({ 
+            current_stock: supabase.sql`current_stock + ${saleToDelete.quantity_sold}`
+          })
+          .eq('id', saleToDelete.product_id);
+
+        if (stockError) throw stockError;
 
         toast({
           title: "Transaksi berhasil dihapus",
           description: "Transaksi telah dihapus dan stok dikembalikan."
+        });
+
+        // Refresh data - CRITICAL FIX for Bug 2
+        await fetchSales();
+        await fetchProducts();
+      } catch (error) {
+        console.error('Error deleting sale:', error);
+        toast({
+          title: "Error",
+          description: "Gagal menghapus transaksi",
+          variant: "destructive"
         });
       }
     }
@@ -163,8 +226,8 @@ const SalesManagement = () => {
 
   const resetForm = () => {
     setFormData({
-      productID_ref: '',
-      quantitySold: ''
+      product_id: '',
+      quantity_sold: ''
     });
     setEditingSale(null);
   };
@@ -181,10 +244,21 @@ const SalesManagement = () => {
     return new Date(dateString).toLocaleString('id-ID');
   };
 
-  const getProductName = (productID: string) => {
-    const product = products.find(p => p.productID === productID);
-    return product ? product.productName : 'Produk tidak ditemukan';
+  const getProductName = (productId: string, productName?: string) => {
+    if (productName) return productName;
+    const product = products.find(p => p.id === productId);
+    return product ? product.product_name : 'Produk tidak ditemukan';
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center">Loading...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -209,19 +283,31 @@ const SalesManagement = () => {
                     <TableHead>Jumlah</TableHead>
                     <TableHead>Total Penjualan</TableHead>
                     <TableHead>Keuntungan</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Pelanggan</TableHead>
                     <TableHead>Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sales.map((sale) => (
-                    <TableRow key={sale.saleID}>
-                      <TableCell>{formatDate(sale.saleTimestamp)}</TableCell>
-                      <TableCell>{getProductName(sale.productID_ref)}</TableCell>
-                      <TableCell>{sale.quantitySold}</TableCell>
-                      <TableCell>{formatCurrency(sale.totalRevenue)}</TableCell>
+                    <TableRow key={sale.id}>
+                      <TableCell>{formatDate(sale.sale_timestamp)}</TableCell>
+                      <TableCell>{getProductName(sale.product_id, sale.products?.product_name)}</TableCell>
+                      <TableCell>{sale.quantity_sold}</TableCell>
+                      <TableCell>{formatCurrency(sale.total_revenue)}</TableCell>
                       <TableCell className="text-green-600 font-medium">
-                        {formatCurrency(sale.totalProfit)}
+                        {formatCurrency(sale.total_profit)}
                       </TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-1 rounded text-sm ${
+                          sale.payment_status === 'Lunas' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {sale.payment_status}
+                        </span>
+                      </TableCell>
+                      <TableCell>{sale.customers?.customer_name || '-'}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
                           <Button
@@ -234,7 +320,7 @@ const SalesManagement = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleDelete(sale.saleID)}
+                            onClick={() => handleDelete(sale.id)}
                             className="text-red-600 hover:text-red-700"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -262,27 +348,27 @@ const SalesManagement = () => {
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label htmlFor="productID_ref">Produk</Label>
-                <Select value={formData.productID_ref} onValueChange={(value) => setFormData({...formData, productID_ref: value})}>
+                <Label htmlFor="product_id">Produk</Label>
+                <Select value={formData.product_id} onValueChange={(value) => setFormData({...formData, product_id: value})}>
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih produk..." />
                   </SelectTrigger>
                   <SelectContent>
                     {products.map((product) => (
-                      <SelectItem key={product.productID} value={product.productID}>
-                        {product.productName}
+                      <SelectItem key={product.id} value={product.id}>
+                        {product.product_name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label htmlFor="quantitySold">Jumlah Terjual</Label>
+                <Label htmlFor="quantity_sold">Jumlah Terjual</Label>
                 <Input
-                  id="quantitySold"
+                  id="quantity_sold"
                   type="number"
-                  value={formData.quantitySold}
-                  onChange={(e) => setFormData({...formData, quantitySold: e.target.value})}
+                  value={formData.quantity_sold}
+                  onChange={(e) => setFormData({...formData, quantity_sold: e.target.value})}
                   placeholder="Jumlah yang terjual"
                   required
                 />

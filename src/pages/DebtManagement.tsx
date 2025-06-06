@@ -35,12 +35,13 @@ const DebtManagement = () => {
 
   const fetchCustomersWithDebt = async () => {
     try {
+      // CRITICAL FIX for Bug 3: Proper join and aggregation
       const { data: salesData, error } = await supabase
         .from('sales')
         .select(`
           customer_id,
           total_revenue,
-          customers (
+          customers!inner (
             id,
             customer_name
           )
@@ -48,7 +49,12 @@ const DebtManagement = () => {
         .eq('payment_status', 'Hutang')
         .not('customer_id', 'is', null);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Sales data fetched:', salesData);
 
       // Group by customer and calculate total debt
       const customerDebtMap = new Map<string, Customer>();
@@ -69,7 +75,9 @@ const DebtManagement = () => {
         }
       });
 
-      setCustomers(Array.from(customerDebtMap.values()));
+      const customerList = Array.from(customerDebtMap.values());
+      console.log('Customer debt list:', customerList);
+      setCustomers(customerList);
     } catch (error) {
       console.error('Error fetching customers with debt:', error);
       toast({
@@ -84,6 +92,9 @@ const DebtManagement = () => {
 
   const fetchCustomerDebtTransactions = async (customerId: string) => {
     try {
+      console.log('Fetching debt transactions for customer:', customerId);
+      
+      // CRITICAL FIX for Bug 3: Proper query with join
       const { data, error } = await supabase
         .from('sales')
         .select(`
@@ -92,7 +103,7 @@ const DebtManagement = () => {
           quantity_sold,
           total_revenue,
           sale_timestamp,
-          products (
+          products!inner (
             product_name
           )
         `)
@@ -100,7 +111,12 @@ const DebtManagement = () => {
         .eq('payment_status', 'Hutang')
         .order('sale_timestamp', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching debt transactions:', error);
+        throw error;
+      }
+
+      console.log('Debt transactions fetched:', data);
 
       const transactions = data?.map((sale: any) => ({
         id: sale.id,

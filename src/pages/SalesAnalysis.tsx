@@ -48,6 +48,9 @@ const SalesAnalysis = () => {
       setLoading(true);
       const startDate = getDateRange();
       
+      console.log('Fetching sales analysis for time filter:', timeFilter, 'start date:', startDate);
+      
+      // CRITICAL FIX for Bug 4: Proper query with explicit join
       let query = supabase
         .from('sales')
         .select(`
@@ -63,14 +66,24 @@ const SalesAnalysis = () => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Raw sales data:', data);
 
       // Process data for analysis
       const productMap = new Map<string, ProductSalesData>();
 
       data?.forEach(sale => {
         const productId = sale.product_id;
-        const productName = (sale.products as any).product_name;
+        const productName = (sale.products as any)?.product_name;
+        
+        if (!productName) {
+          console.warn('Product name not found for product_id:', productId);
+          return;
+        }
         
         if (productMap.has(productId)) {
           const existing = productMap.get(productId)!;
@@ -87,6 +100,7 @@ const SalesAnalysis = () => {
       });
 
       const productData = Array.from(productMap.values());
+      console.log('Processed product data:', productData);
 
       // Sort by quantity for best sellers
       const sortedByQuantity = [...productData].sort((a, b) => b.total_quantity - a.total_quantity);
@@ -95,6 +109,9 @@ const SalesAnalysis = () => {
       // Sort by profit for most profitable
       const sortedByProfit = [...productData].sort((a, b) => b.total_profit - a.total_profit);
       setMostProfitable(sortedByProfit);
+
+      console.log('Best sellers:', sortedByQuantity);
+      console.log('Most profitable:', sortedByProfit);
 
     } catch (error) {
       console.error('Error fetching sales analysis:', error);
