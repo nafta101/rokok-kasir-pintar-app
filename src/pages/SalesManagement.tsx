@@ -60,15 +60,15 @@ const SalesManagement = () => {
         .from('sales')
         .select(`
           *,
-          products!inner(product_name),
+          products(product_name),
           customers(customer_name)
         `)
         .order('sale_timestamp', { ascending: false });
 
       if (error) throw error;
       
-      // Type assertion to ensure proper typing
-      setSales((data || []) as Sale[]);
+      // Handle the data properly without forcing type conversion
+      setSales(data || []);
     } catch (error) {
       console.error('Error fetching sales:', error);
       toast({
