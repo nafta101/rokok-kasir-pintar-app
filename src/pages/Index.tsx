@@ -19,11 +19,13 @@ const Index = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [todayProfit, setTodayProfit] = useState(0);
+  const [totalOutstandingDebt, setTotalOutstandingDebt] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchProducts();
     fetchTodayProfit();
+    fetchTotalOutstandingDebt();
   }, []);
 
   const fetchProducts = async () => {
@@ -63,6 +65,22 @@ const Index = () => {
     }
   };
 
+  const fetchTotalOutstandingDebt = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select('total_revenue')
+        .eq('payment_status', 'Hutang');
+
+      if (error) throw error;
+
+      const totalDebt = data?.reduce((sum, sale) => sum + Number(sale.total_revenue), 0) || 0;
+      setTotalOutstandingDebt(totalDebt);
+    } catch (error) {
+      console.error('Error fetching total outstanding debt:', error);
+    }
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -74,6 +92,7 @@ const Index = () => {
   const handleSaleComplete = () => {
     fetchProducts();
     fetchTodayProfit();
+    fetchTotalOutstandingDebt();
   };
 
   if (loading) {
@@ -95,15 +114,28 @@ const Index = () => {
           <p className="text-gray-600">Selamat datang di sistem kasir dan manajemen stok</p>
         </div>
 
-        {/* Profit Card */}
-        <Card className="mb-8 bg-gradient-to-r from-green-500 to-green-600 text-white">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold">Total Keuntungan Hari Ini</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{formatCurrency(todayProfit)}</div>
-          </CardContent>
-        </Card>
+        {/* Financial Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Today's Profit Card */}
+          <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold">Total Keuntungan Hari Ini</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{formatCurrency(todayProfit)}</div>
+            </CardContent>
+          </Card>
+
+          {/* Outstanding Debt Card */}
+          <Card className="bg-gradient-to-r from-red-500 to-red-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold">Total Hutang Beredar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{formatCurrency(totalOutstandingDebt)}</div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* New Sale Button */}
         <div className="mb-6">

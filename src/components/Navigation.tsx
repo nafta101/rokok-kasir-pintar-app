@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Home, Package, Receipt, BarChart3, CreditCard, Menu } from "lucide-react";
+import { Home, Package, Receipt, BarChart3, CreditCard, TrendingUp, Menu } from "lucide-react";
 
 const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -32,6 +33,12 @@ const Navigation = () => {
       href: "/hutang",
       icon: CreditCard,
       description: "Kelola Hutang"
+    },
+    {
+      title: "Analisis",
+      href: "/analisis",
+      icon: TrendingUp,
+      description: "Analisis Penjualan"
     },
     {
       title: "Update Stok",
