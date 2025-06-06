@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,10 +30,10 @@ interface Sale {
   customer_id?: string;
   products?: {
     product_name: string;
-  };
+  } | null;
   customers?: {
     customer_name: string;
-  };
+  } | null;
 }
 
 const SalesManagement = () => {
@@ -67,8 +66,8 @@ const SalesManagement = () => {
 
       if (error) throw error;
       
-      // Handle the data properly without forcing type conversion
-      setSales(data || []);
+      // Handle the data with proper type handling
+      setSales(data as Sale[] || []);
     } catch (error) {
       console.error('Error fetching sales:', error);
       toast({
