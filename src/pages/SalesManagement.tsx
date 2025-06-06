@@ -60,13 +60,15 @@ const SalesManagement = () => {
         .from('sales')
         .select(`
           *,
-          products (product_name),
-          customers (customer_name)
+          products!inner(product_name),
+          customers(customer_name)
         `)
         .order('sale_timestamp', { ascending: false });
 
       if (error) throw error;
-      setSales(data || []);
+      
+      // Type assertion to ensure proper typing
+      setSales((data || []) as Sale[]);
     } catch (error) {
       console.error('Error fetching sales:', error);
       toast({
@@ -195,11 +197,19 @@ const SalesManagement = () => {
 
         if (deleteError) throw deleteError;
 
-        // Return stock to product
+        // Return stock to product - use proper Supabase syntax
+        const { data: currentProduct, error: fetchError } = await supabase
+          .from('products')
+          .select('current_stock')
+          .eq('id', saleToDelete.product_id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
         const { error: stockError } = await supabase
           .from('products')
           .update({ 
-            current_stock: supabase.sql`current_stock + ${saleToDelete.quantity_sold}`
+            current_stock: currentProduct.current_stock + saleToDelete.quantity_sold
           })
           .eq('id', saleToDelete.product_id);
 
