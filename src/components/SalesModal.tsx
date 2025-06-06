@@ -1,13 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Plus } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -30,23 +28,25 @@ interface SalesModalProps {
   onSaleComplete: () => void;
 }
 
-export const SalesModal: React.FC<SalesModalProps> = ({ isOpen, onClose, onSaleComplete }) => {
+export const SalesModal: React.FC<SalesModalProps> = ({
+  isOpen,
+  onClose,
+  onSaleComplete
+}) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [paymentStatus, setPaymentStatus] = useState('Lunas');
-  const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [selectedProductID, setSelectedProductID] = useState('');
+  const [quantitySold, setQuantitySold] = useState('');
+  const [isDebt, setIsDebt] = useState(false);
+  const [selectedCustomerID, setSelectedCustomerID] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
-  const [showNewCustomerInput, setShowNewCustomerInput] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     if (isOpen) {
       fetchProducts();
       fetchCustomers();
-      resetForm();
     }
   }, [isOpen]);
 
@@ -55,17 +55,13 @@ export const SalesModal: React.FC<SalesModalProps> = ({ isOpen, onClose, onSaleC
       const { data, error } = await supabase
         .from('products')
         .select('*')
+        .gt('current_stock', 0)
         .order('product_name');
 
       if (error) throw error;
       setProducts(data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
-      toast({
-        title: "Error",
-        description: "Gagal mengambil data produk",
-        variant: "destructive"
-      });
     }
   };
 
@@ -83,104 +79,102 @@ export const SalesModal: React.FC<SalesModalProps> = ({ isOpen, onClose, onSaleC
     }
   };
 
-  const resetForm = () => {
-    setSelectedProduct('');
-    setQuantity('');
-    setPaymentStatus('Lunas');
-    setSelectedCustomer('');
-    setNewCustomerName('');
-    setShowNewCustomerInput(false);
-  };
+  const handleAddNewCustomer = async () => {
+    if (!newCustomerName.trim()) return;
 
-  const handleCustomerChange = (value: string) => {
-    if (value === 'new_customer') {
-      setShowNewCustomerInput(true);
-      setSelectedCustomer('');
-    } else {
-      setShowNewCustomerInput(false);
-      setSelectedCustomer(value);
-    }
-  };
-
-  const createNewCustomer = async (customerName: string) => {
     try {
       const { data, error } = await supabase
         .from('customers')
-        .insert([{ customer_name: customerName }])
+        .insert([{ customer_name: newCustomerName.trim() }])
         .select()
         .single();
 
       if (error) throw error;
-      return data.id;
+
+      setCustomers(prev => [...prev, data]);
+      setSelectedCustomerID(data.id);
+      setNewCustomerName('');
+      setShowAddCustomer(false);
+
+      toast({
+        title: "Berhasil",
+        description: "Pelanggan baru telah ditambahkan"
+      });
     } catch (error) {
-      console.error('Error creating customer:', error);
-      throw error;
+      console.error('Error adding customer:', error);
+      toast({
+        title: "Error",
+        description: "Gagal menambahkan pelanggan baru",
+        variant: "destructive"
+      });
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!selectedProduct || !quantity) {
+    if (!selectedProductID || !quantitySold) {
       toast({
         title: "Error",
-        description: "Pilih produk dan masukkan jumlah",
+        description: "Harap pilih produk dan masukkan jumlah terjual!",
         variant: "destructive"
       });
       return;
     }
 
-    if (paymentStatus === 'Hutang' && !selectedCustomer && !newCustomerName) {
+    if (isDebt && !selectedCustomerID) {
       toast({
         title: "Error",
-        description: "Pilih pelanggan atau tambah pelanggan baru untuk transaksi hutang",
+        description: "Harap pilih pelanggan untuk transaksi hutang!",
         variant: "destructive"
       });
       return;
     }
 
-    setLoading(true);
+    const selectedProduct = products.find(p => p.id === selectedProductID);
+    if (!selectedProduct) {
+      toast({
+        title: "Error", 
+        description: "Produk tidak ditemukan!",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const quantity = parseInt(quantitySold);
+    if (quantity <= 0) {
+      toast({
+        title: "Error",
+        description: "Jumlah terjual harus lebih dari 0!",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (quantity > selectedProduct.current_stock) {
+      toast({
+        title: "Error",
+        description: `Stok tidak mencukupi! Stok tersisa: ${selectedProduct.current_stock}`,
+        variant: "destructive"
+      });
+      return;
+    }
 
     try {
-      const product = products.find(p => p.id === selectedProduct);
-      if (!product) {
-        throw new Error('Produk tidak ditemukan');
-      }
-
-      const quantityNum = parseInt(quantity);
-      if (quantityNum > product.current_stock) {
-        toast({
-          title: "Error",
-          description: `Stok tidak mencukupi! Stok tersisa: ${product.current_stock}`,
-          variant: "destructive"
-        });
-        return;
-      }
-
-      let customerId = selectedCustomer;
-
-      // Create new customer if needed
-      if (paymentStatus === 'Hutang' && newCustomerName && !selectedCustomer) {
-        customerId = await createNewCustomer(newCustomerName);
-        toast({
-          title: "Pelanggan baru berhasil ditambahkan",
-          description: `${newCustomerName} telah ditambahkan ke daftar pelanggan.`
-        });
-      }
-
-      const totalRevenue = product.selling_price * quantityNum;
-      const totalCost = product.purchase_price * quantityNum;
+      // Calculate sale details
+      const totalRevenue = selectedProduct.selling_price * quantity;
+      const totalCost = selectedProduct.purchase_price * quantity;
       const totalProfit = totalRevenue - totalCost;
 
       // Create sale record
       const saleData = {
-        product_id: selectedProduct,
-        quantity_sold: quantityNum,
+        product_id: selectedProductID,
+        quantity_sold: quantity,
         total_revenue: totalRevenue,
         total_cost: totalCost,
         total_profit: totalProfit,
-        payment_status: paymentStatus,
-        customer_id: paymentStatus === 'Hutang' ? customerId : null
+        payment_status: isDebt ? 'Hutang' : 'Lunas',
+        customer_id: isDebt ? selectedCustomerID : null
       };
 
       const { error: saleError } = await supabase
@@ -189,23 +183,22 @@ export const SalesModal: React.FC<SalesModalProps> = ({ isOpen, onClose, onSaleC
 
       if (saleError) throw saleError;
 
-      // Update product stock - CRITICAL FIX
-      const newStock = product.current_stock - quantityNum;
-      const { error: stockError } = await supabase
+      // Update product stock
+      const { error: updateError } = await supabase
         .from('products')
-        .update({ current_stock: newStock })
-        .eq('id', selectedProduct);
+        .update({ current_stock: selectedProduct.current_stock - quantity })
+        .eq('id', selectedProductID);
 
-      if (stockError) throw stockError;
+      if (updateError) throw updateError;
 
       toast({
-        title: "Transaksi berhasil disimpan",
-        description: `Penjualan ${product.product_name} sebanyak ${quantityNum} unit telah dicatat.`
+        title: "Transaksi berhasil!",
+        description: `Penjualan ${selectedProduct.product_name} sebanyak ${quantity} telah dicatat.`
       });
 
+      onSaleComplete();
       resetForm();
       onClose();
-      onSaleComplete(); // This will refresh the parent component data
     } catch (error) {
       console.error('Error saving sale:', error);
       toast({
@@ -213,12 +206,27 @@ export const SalesModal: React.FC<SalesModalProps> = ({ isOpen, onClose, onSaleC
         description: "Gagal menyimpan transaksi",
         variant: "destructive"
       });
-    } finally {
-      setLoading(false);
     }
   };
 
-  const selectedProductData = products.find(p => p.id === selectedProduct);
+  const resetForm = () => {
+    setSelectedProductID('');
+    setQuantitySold('');
+    setIsDebt(false);
+    setSelectedCustomerID('');
+    setNewCustomerName('');
+    setShowAddCustomer(false);
+  };
+
+  const selectedProduct = products.find(p => p.id === selectedProductID);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0
+    }).format(amount);
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -226,48 +234,85 @@ export const SalesModal: React.FC<SalesModalProps> = ({ isOpen, onClose, onSaleC
         <DialogHeader>
           <DialogTitle>Catat Penjualan Baru</DialogTitle>
         </DialogHeader>
+        
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Payment Status */}
-          <div>
-            <Label>Status Pembayaran</Label>
-            <RadioGroup value={paymentStatus} onValueChange={setPaymentStatus} className="flex gap-4 mt-2">
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="Lunas" id="lunas" />
-                <Label htmlFor="lunas">Lunas</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="Hutang" id="hutang" />
-                <Label htmlFor="hutang">Hutang</Label>
-              </div>
-            </RadioGroup>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="payment-status">Status Pembayaran</Label>
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="payment-switch" className={!isDebt ? 'font-medium' : ''}>
+                Lunas
+              </Label>
+              <Switch
+                id="payment-switch"
+                checked={isDebt}
+                onCheckedChange={setIsDebt}
+              />
+              <Label htmlFor="payment-switch" className={isDebt ? 'font-medium' : ''}>
+                Hutang
+              </Label>
+            </div>
           </div>
 
-          {/* Customer Selection - Only show if payment status is Hutang */}
-          {paymentStatus === 'Hutang' && (
+          {/* Customer Selection (only if debt) */}
+          {isDebt && (
             <div>
               <Label htmlFor="customer">Pilih Pelanggan</Label>
-              <Select onValueChange={handleCustomerChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih pelanggan..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new_customer">+ Tambah Pelanggan Baru</SelectItem>
-                  {customers.map((customer) => (
-                    <SelectItem key={customer.id} value={customer.id}>
-                      {customer.customer_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {/* New Customer Input */}
-              {showNewCustomerInput && (
-                <div className="mt-2">
+              {!showAddCustomer ? (
+                <div className="space-y-2">
+                  <Select value={selectedCustomerID} onValueChange={setSelectedCustomerID}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih pelanggan..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers.map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id}>
+                          {customer.customer_name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="add_new" onSelect={() => setShowAddCustomer(true)}>
+                        + Tambah Pelanggan Baru
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAddCustomer(true)}
+                    className="w-full"
+                  >
+                    + Tambah Pelanggan Baru
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
                   <Input
-                    placeholder="Nama pelanggan baru..."
                     value={newCustomerName}
                     onChange={(e) => setNewCustomerName(e.target.value)}
+                    placeholder="Nama pelanggan baru..."
                   />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      onClick={handleAddNewCustomer}
+                      size="sm"
+                      className="flex-1"
+                    >
+                      Simpan
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setShowAddCustomer(false);
+                        setNewCustomerName('');
+                      }}
+                      size="sm"
+                    >
+                      Batal
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -275,57 +320,81 @@ export const SalesModal: React.FC<SalesModalProps> = ({ isOpen, onClose, onSaleC
 
           {/* Product Selection */}
           <div>
-            <Label htmlFor="product">Produk</Label>
-            <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+            <Label htmlFor="product">Pilih Produk</Label>
+            <Select value={selectedProductID} onValueChange={setSelectedProductID}>
               <SelectTrigger>
-                <SelectValue placeholder="Pilih produk..." />
+                <SelectValue placeholder="Pilih produk yang dijual..." />
               </SelectTrigger>
               <SelectContent>
                 {products.map((product) => (
                   <SelectItem key={product.id} value={product.id}>
-                    {product.product_name} (Stok: {product.current_stock})
+                    {product.product_name} - {formatCurrency(product.selling_price)} (Stok: {product.current_stock})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
+          {/* Product Info */}
+          {selectedProduct && (
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <div className="text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span>Harga Jual:</span>
+                  <span className="font-medium">{formatCurrency(selectedProduct.selling_price)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Stok Tersedia:</span>
+                  <span className="font-medium">{selectedProduct.current_stock}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Quantity */}
           <div>
-            <Label htmlFor="quantity">Jumlah</Label>
+            <Label htmlFor="quantity">Jumlah Terjual</Label>
             <Input
               id="quantity"
               type="number"
+              value={quantitySold}
+              onChange={(e) => setQuantitySold(e.target.value)}
+              placeholder="Masukkan jumlah yang terjual..."
               min="1"
-              max={selectedProductData?.current_stock || 999}
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Jumlah yang dijual"
+              max={selectedProduct?.current_stock || 1}
               required
             />
           </div>
 
-          {/* Total Calculation */}
-          {selectedProductData && quantity && (
-            <Card className="bg-gray-50">
-              <CardContent className="p-4">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Harga Satuan:</span>
-                    <span>{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(selectedProductData.selling_price)}</span>
-                  </div>
-                  <div className="flex justify-between font-semibold">
-                    <span>Total:</span>
-                    <span>{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(selectedProductData.selling_price * parseInt(quantity || '0'))}</span>
-                  </div>
+          {/* Sale Summary */}
+          {selectedProduct && quantitySold && parseInt(quantitySold) > 0 && (
+            <div className="bg-green-50 p-3 rounded-lg">
+              <div className="text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span>Total Penjualan:</span>
+                  <span className="font-medium">
+                    {formatCurrency(selectedProduct.selling_price * parseInt(quantitySold))}
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="flex justify-between">
+                  <span>Keuntungan:</span>
+                  <span className="font-medium text-green-600">
+                    {formatCurrency((selectedProduct.selling_price - selectedProduct.purchase_price) * parseInt(quantitySold))}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Status:</span>
+                  <span className={`font-medium ${isDebt ? 'text-orange-600' : 'text-green-600'}`}>
+                    {isDebt ? 'Hutang' : 'Lunas'}
+                  </span>
+                </div>
+              </div>
+            </div>
           )}
 
           <div className="flex gap-2 pt-4">
-            <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? 'Menyimpan...' : 'Simpan Transaksi'}
+            <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700">
+              Simpan Transaksi
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
               Batal
