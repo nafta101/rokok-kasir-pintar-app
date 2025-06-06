@@ -27,6 +27,78 @@ export type Database = {
         }
         Relationships: []
       }
+      Pelanggan: {
+        Row: {
+          created_at: string | null
+          id: string
+          kontak: string | null
+          namaPelanggan: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          kontak?: string | null
+          namaPelanggan: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          kontak?: string | null
+          namaPelanggan?: string
+        }
+        Relationships: []
+      }
+      Penjualan: {
+        Row: {
+          created_at: string | null
+          id: string
+          jumlahTerjual: number
+          pelanggan_id: string | null
+          produk_id: string | null
+          statusPembayaran: string
+          totalKeuntungan: number
+          totalModal: number
+          totalPendapatan: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          jumlahTerjual: number
+          pelanggan_id?: string | null
+          produk_id?: string | null
+          statusPembayaran?: string
+          totalKeuntungan: number
+          totalModal: number
+          totalPendapatan: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          jumlahTerjual?: number
+          pelanggan_id?: string | null
+          produk_id?: string | null
+          statusPembayaran?: string
+          totalKeuntungan?: number
+          totalModal?: number
+          totalPendapatan?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "Penjualan_pelanggan_id_fkey"
+            columns: ["pelanggan_id"]
+            isOneToOne: false
+            referencedRelation: "Pelanggan"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "Penjualan_produk_id_fkey"
+            columns: ["produk_id"]
+            isOneToOne: false
+            referencedRelation: "Produk"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           created_at: string
@@ -54,6 +126,33 @@ export type Database = {
           product_name?: string
           purchase_price?: number
           selling_price?: number
+        }
+        Relationships: []
+      }
+      Produk: {
+        Row: {
+          created_at: string | null
+          hargaBeli: number
+          hargaJual: number
+          id: string
+          namaProduk: string
+          stokSaatIni: number
+        }
+        Insert: {
+          created_at?: string | null
+          hargaBeli: number
+          hargaJual: number
+          id?: string
+          namaProduk: string
+          stokSaatIni: number
+        }
+        Update: {
+          created_at?: string | null
+          hargaBeli?: number
+          hargaJual?: number
+          id?: string
+          namaProduk?: string
+          stokSaatIni?: number
         }
         Relationships: []
       }
@@ -106,7 +205,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      handle_new_sale: {
+        Args: {
+          p_produk_id: string
+          p_jumlah_terjual: number
+          p_status_pembayaran: string
+          p_pelanggan_id?: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

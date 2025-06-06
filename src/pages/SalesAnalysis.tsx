@@ -19,7 +19,30 @@ const SalesAnalysis = () => {
 
   useEffect(() => {
     fetchSalesAnalysis();
+    setupRealtimeSubscriptions();
   }, [timeFilter]);
+
+  const setupRealtimeSubscriptions = () => {
+    const channel = supabase
+      .channel('sales-analysis-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'Penjualan'
+        },
+        (payload) => {
+          console.log('Sales data changed, refreshing analysis:', payload);
+          fetchSalesAnalysis();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
 
   const getDateRange = () => {
     const now = new Date();
@@ -49,16 +72,16 @@ const SalesAnalysis = () => {
       const startDate = getDateRange();
       
       let query = supabase
-        .from('sales')
+        .from('Penjualan')
         .select(`
-          product_id,
-          quantity_sold,
-          total_profit,
-          products!inner(product_name)
+          produk_id,
+          jumlahTerjual,
+          totalKeuntungan,
+          Produk!inner(namaProduk)
         `);
 
       if (startDate) {
-        query = query.gte('sale_timestamp', startDate.toISOString());
+        query = query.gte('created_at', startDate.toISOString());
       }
 
       const { data, error } = await query;
@@ -69,19 +92,19 @@ const SalesAnalysis = () => {
       const productMap = new Map<string, ProductSalesData>();
 
       data?.forEach(sale => {
-        const productId = sale.product_id;
-        const productName = (sale.products as any).product_name;
+        const productId = sale.produk_id;
+        const productName = (sale.Produk as any).namaProduk;
         
         if (productMap.has(productId)) {
           const existing = productMap.get(productId)!;
-          existing.total_quantity += sale.quantity_sold;
-          existing.total_profit += Number(sale.total_profit);
+          existing.total_quantity += sale.jumlahTerjual;
+          existing.total_profit += Number(sale.totalKeuntungan);
         } else {
           productMap.set(productId, {
             product_id: productId,
             product_name: productName,
-            total_quantity: sale.quantity_sold,
-            total_profit: Number(sale.total_profit)
+            total_quantity: sale.jumlahTerjual,
+            total_profit: Number(sale.totalKeuntungan)
           });
         }
       });

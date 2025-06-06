@@ -4,18 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Minus, RotateCcw, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Product {
-  productID: string;
-  productName: string;
-  purchasePrice: number;
-  sellingPrice: number;
-  initialStock: number;
-  currentStock: number;
+  id: string;
+  namaProduk: string;
+  hargaBeli: number;
+  hargaJual: number;
+  stokSaatIni: number;
 }
 
 const StockUpdate = () => {
@@ -27,15 +27,48 @@ const StockUpdate = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    const savedProducts = localStorage.getItem('products');
-    if (savedProducts) {
-      setProducts(JSON.parse(savedProducts));
-    }
+    fetchProducts();
+    setupRealtimeSubscriptions();
   }, []);
 
-  const saveProducts = (updatedProducts: Product[]) => {
-    setProducts(updatedProducts);
-    localStorage.setItem('products', JSON.stringify(updatedProducts));
+  const setupRealtimeSubscriptions = () => {
+    const channel = supabase
+      .channel('stock-update-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'Produk'
+        },
+        (payload) => {
+          console.log('Product stock updated:', payload);
+          setProducts(prev => prev.map(product => 
+            product.id === payload.new.id 
+              ? { ...product, stokSaatIni: payload.new.stokSaatIni }
+              : product
+          ));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('Produk')
+        .select('*')
+        .order('namaProduk');
+
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    }
   };
 
   const handleStockUpdate = (product: Product, type: 'add' | 'subtract' | 'reset') => {
@@ -45,55 +78,63 @@ const StockUpdate = () => {
     setIsDialogOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!selectedProduct) return;
 
-    let newStock = selectedProduct.currentStock;
+    let newStock = selectedProduct.stokSaatIni;
     const qty = parseInt(quantity);
 
     switch (updateType) {
       case 'add':
-        newStock = selectedProduct.currentStock + qty;
+        newStock = selectedProduct.stokSaatIni + qty;
         break;
       case 'subtract':
-        newStock = Math.max(0, selectedProduct.currentStock - qty);
+        newStock = Math.max(0, selectedProduct.stokSaatIni - qty);
         break;
       case 'reset':
         newStock = qty;
         break;
     }
 
-    const updatedProducts = products.map(p => 
-      p.productID === selectedProduct.productID 
-        ? { ...p, currentStock: newStock }
-        : p
-    );
+    try {
+      const { error } = await supabase
+        .from('Produk')
+        .update({ stokSaatIni: newStock })
+        .eq('id', selectedProduct.id);
 
-    saveProducts(updatedProducts);
+      if (error) throw error;
 
-    let actionText = '';
-    switch (updateType) {
-      case 'add':
-        actionText = `ditambah ${qty}`;
-        break;
-      case 'subtract':
-        actionText = `dikurangi ${qty}`;
-        break;
-      case 'reset':
-        actionText = `direset ke ${qty}`;
-        break;
+      let actionText = '';
+      switch (updateType) {
+        case 'add':
+          actionText = `ditambah ${qty}`;
+          break;
+        case 'subtract':
+          actionText = `dikurangi ${qty}`;
+          break;
+        case 'reset':
+          actionText = `direset ke ${qty}`;
+          break;
+      }
+
+      toast({
+        title: "Stok berhasil diperbarui",
+        description: `Stok ${selectedProduct.namaProduk} ${actionText}.`
+      });
+
+      setIsDialogOpen(false);
+      setSelectedProduct(null);
+      setQuantity('');
+    } catch (error) {
+      console.error('Error updating stock:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memperbarui stok",
+        variant: "destructive"
+      });
     }
-
-    toast({
-      title: "Stok berhasil diperbarui",
-      description: `Stok ${selectedProduct.productName} ${actionText}.`
-    });
-
-    setIsDialogOpen(false);
-    setSelectedProduct(null);
-    setQuantity('');
   };
 
   const formatCurrency = (amount: number) => {
@@ -148,7 +189,7 @@ const StockUpdate = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">
-                {products.filter(p => p.currentStock < 10 && p.currentStock > 0).length}
+                {products.filter(p => p.stokSaatIni < 10 && p.stokSaatIni > 0).length}
               </div>
             </CardContent>
           </Card>
@@ -159,7 +200,7 @@ const StockUpdate = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">
-                {products.filter(p => p.currentStock === 0).length}
+                {products.filter(p => p.stokSaatIni === 0).length}
               </div>
             </CardContent>
           </Card>
@@ -184,17 +225,17 @@ const StockUpdate = () => {
                 </TableHeader>
                 <TableBody>
                   {products.map((product) => {
-                    const status = getStockStatus(product.currentStock);
+                    const status = getStockStatus(product.stokSaatIni);
                     return (
-                      <TableRow key={product.productID}>
+                      <TableRow key={product.id}>
                         <TableCell>
                           <div>
-                            <div className="font-medium">{product.productName}</div>
-                            <div className="text-sm text-gray-500">{product.productID}</div>
+                            <div className="font-medium">{product.namaProduk}</div>
+                            <div className="text-sm text-gray-500">{product.id}</div>
                           </div>
                         </TableCell>
-                        <TableCell>{formatCurrency(product.sellingPrice)}</TableCell>
-                        <TableCell className="font-medium">{product.currentStock}</TableCell>
+                        <TableCell>{formatCurrency(product.hargaJual)}</TableCell>
+                        <TableCell className="font-medium">{product.stokSaatIni}</TableCell>
                         <TableCell>
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>
                             {status.text === 'Rendah' && <AlertTriangle className="h-3 w-3 mr-1" />}
@@ -216,7 +257,7 @@ const StockUpdate = () => {
                               variant="outline"
                               onClick={() => handleStockUpdate(product, 'subtract')}
                               className="text-orange-600 hover:text-orange-700"
-                              disabled={product.currentStock === 0}
+                              disabled={product.stokSaatIni === 0}
                             >
                               <Minus className="h-4 w-4" />
                             </Button>
@@ -254,8 +295,8 @@ const StockUpdate = () => {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <div className="text-sm space-y-1">
-                    <div className="font-medium">{selectedProduct.productName}</div>
-                    <div className="text-gray-600">Stok saat ini: {selectedProduct.currentStock}</div>
+                    <div className="font-medium">{selectedProduct.namaProduk}</div>
+                    <div className="text-gray-600">Stok saat ini: {selectedProduct.stokSaatIni}</div>
                   </div>
                 </div>
                 
@@ -272,7 +313,7 @@ const StockUpdate = () => {
                     onChange={(e) => setQuantity(e.target.value)}
                     placeholder="Masukkan jumlah..."
                     min="0"
-                    max={updateType === 'subtract' ? selectedProduct.currentStock : undefined}
+                    max={updateType === 'subtract' ? selectedProduct.stokSaatIni : undefined}
                     required
                   />
                 </div>
@@ -282,8 +323,8 @@ const StockUpdate = () => {
                     <div className="text-sm">
                       <strong>Hasil:</strong> Stok akan menjadi{' '}
                       <span className="font-bold">
-                        {updateType === 'add' && selectedProduct.currentStock + parseInt(quantity)}
-                        {updateType === 'subtract' && Math.max(0, selectedProduct.currentStock - parseInt(quantity))}
+                        {updateType === 'add' && selectedProduct.stokSaatIni + parseInt(quantity)}
+                        {updateType === 'subtract' && Math.max(0, selectedProduct.stokSaatIni - parseInt(quantity))}
                         {updateType === 'reset' && parseInt(quantity)}
                       </span>
                     </div>

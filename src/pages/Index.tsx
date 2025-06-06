@@ -8,11 +8,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface Product {
   id: string;
-  product_name: string;
-  purchase_price: number;
-  selling_price: number;
-  initial_stock: number;
-  current_stock: number;
+  namaProduk: string;
+  hargaBeli: number;
+  hargaJual: number;
+  stokSaatIni: number;
 }
 
 const Index = () => {
@@ -26,14 +25,98 @@ const Index = () => {
     fetchProducts();
     fetchTodayProfit();
     fetchTotalOutstandingDebt();
+    setupRealtimeSubscriptions();
   }, []);
+
+  const setupRealtimeSubscriptions = () => {
+    // Subscribe to product updates for real-time stock changes
+    const productsChannel = supabase
+      .channel('products-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'Produk'
+        },
+        (payload) => {
+          console.log('Product updated:', payload);
+          setProducts(prev => prev.map(product => 
+            product.id === payload.new.id 
+              ? { ...product, stokSaatIni: payload.new.stokSaatIni }
+              : product
+          ));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Produk'
+        },
+        (payload) => {
+          console.log('New product added:', payload);
+          setProducts(prev => [...prev, payload.new as Product]);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'Produk'
+        },
+        (payload) => {
+          console.log('Product deleted:', payload);
+          setProducts(prev => prev.filter(product => product.id !== payload.old.id));
+        }
+      )
+      .subscribe();
+
+    // Subscribe to sales changes for real-time profit and debt updates
+    const salesChannel = supabase
+      .channel('sales-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Penjualan'
+        },
+        (payload) => {
+          console.log('New sale recorded:', payload);
+          fetchTodayProfit();
+          fetchTotalOutstandingDebt();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'Penjualan'
+        },
+        (payload) => {
+          console.log('Sale updated:', payload);
+          fetchTodayProfit();
+          fetchTotalOutstandingDebt();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(productsChannel);
+      supabase.removeChannel(salesChannel);
+    };
+  };
 
   const fetchProducts = async () => {
     try {
       const { data, error } = await supabase
-        .from('products')
+        .from('Produk')
         .select('*')
-        .order('product_name');
+        .order('namaProduk');
 
       if (error) throw error;
       setProducts(data || []);
@@ -51,14 +134,14 @@ const Index = () => {
       const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
       const { data, error } = await supabase
-        .from('sales')
-        .select('total_profit')
-        .gte('sale_timestamp', startOfDay.toISOString())
-        .lt('sale_timestamp', endOfDay.toISOString());
+        .from('Penjualan')
+        .select('totalKeuntungan')
+        .gte('created_at', startOfDay.toISOString())
+        .lt('created_at', endOfDay.toISOString());
 
       if (error) throw error;
 
-      const profit = data?.reduce((sum, sale) => sum + Number(sale.total_profit), 0) || 0;
+      const profit = data?.reduce((sum, sale) => sum + Number(sale.totalKeuntungan), 0) || 0;
       setTodayProfit(profit);
     } catch (error) {
       console.error('Error fetching today profit:', error);
@@ -68,13 +151,13 @@ const Index = () => {
   const fetchTotalOutstandingDebt = async () => {
     try {
       const { data, error } = await supabase
-        .from('sales')
-        .select('total_revenue')
-        .eq('payment_status', 'Hutang');
+        .from('Penjualan')
+        .select('totalPendapatan')
+        .eq('statusPembayaran', 'Hutang');
 
       if (error) throw error;
 
-      const totalDebt = data?.reduce((sum, sale) => sum + Number(sale.total_revenue), 0) || 0;
+      const totalDebt = data?.reduce((sum, sale) => sum + Number(sale.totalPendapatan), 0) || 0;
       setTotalOutstandingDebt(totalDebt);
     } catch (error) {
       console.error('Error fetching total outstanding debt:', error);
@@ -90,9 +173,8 @@ const Index = () => {
   };
 
   const handleSaleComplete = () => {
-    fetchProducts();
-    fetchTodayProfit();
-    fetchTotalOutstandingDebt();
+    // Real-time subscriptions will automatically update the data
+    // No need to manually refresh
   };
 
   if (loading) {
@@ -159,19 +241,19 @@ const Index = () => {
               {products.map((product) => (
                 <Card key={product.id} className="border-l-4 border-l-blue-500">
                   <CardContent className="p-4">
-                    <h3 className="font-semibold text-lg mb-2">{product.product_name}</h3>
+                    <h3 className="font-semibold text-lg mb-2">{product.namaProduk}</h3>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Harga Jual:</span>
-                        <span className="font-medium">{formatCurrency(product.selling_price)}</span>
+                        <span className="font-medium">{formatCurrency(product.hargaJual)}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Stok:</span>
                         <span className={`font-medium flex items-center gap-1 ${
-                          product.current_stock < 10 ? 'text-red-600' : 'text-green-600'
+                          product.stokSaatIni < 10 ? 'text-red-600' : 'text-green-600'
                         }`}>
-                          {product.current_stock < 10 && <AlertTriangle className="h-4 w-4" />}
-                          {product.current_stock}
+                          {product.stokSaatIni < 10 && <AlertTriangle className="h-4 w-4" />}
+                          {product.stokSaatIni}
                         </span>
                       </div>
                     </div>

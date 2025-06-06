@@ -11,15 +11,15 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface Product {
   id: string;
-  product_name: string;
-  purchase_price: number;
-  selling_price: number;
-  current_stock: number;
+  namaProduk: string;
+  hargaBeli: number;
+  hargaJual: number;
+  stokSaatIni: number;
 }
 
 interface Customer {
   id: string;
-  customer_name: string;
+  namaPelanggan: string;
 }
 
 interface SalesModalProps {
@@ -53,10 +53,10 @@ export const SalesModal: React.FC<SalesModalProps> = ({
   const fetchProducts = async () => {
     try {
       const { data, error } = await supabase
-        .from('products')
+        .from('Produk')
         .select('*')
-        .gt('current_stock', 0)
-        .order('product_name');
+        .gt('stokSaatIni', 0)
+        .order('namaProduk');
 
       if (error) throw error;
       setProducts(data || []);
@@ -68,9 +68,9 @@ export const SalesModal: React.FC<SalesModalProps> = ({
   const fetchCustomers = async () => {
     try {
       const { data, error } = await supabase
-        .from('customers')
+        .from('Pelanggan')
         .select('*')
-        .order('customer_name');
+        .order('namaPelanggan');
 
       if (error) throw error;
       setCustomers(data || []);
@@ -84,8 +84,8 @@ export const SalesModal: React.FC<SalesModalProps> = ({
 
     try {
       const { data, error } = await supabase
-        .from('customers')
-        .insert([{ customer_name: newCustomerName.trim() }])
+        .from('Pelanggan')
+        .insert([{ namaPelanggan: newCustomerName.trim() }])
         .select()
         .single();
 
@@ -151,49 +151,29 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       return;
     }
 
-    if (quantity > selectedProduct.current_stock) {
+    if (quantity > selectedProduct.stokSaatIni) {
       toast({
         title: "Error",
-        description: `Stok tidak mencukupi! Stok tersisa: ${selectedProduct.current_stock}`,
+        description: `Stok tidak mencukupi! Stok tersisa: ${selectedProduct.stokSaatIni}`,
         variant: "destructive"
       });
       return;
     }
 
     try {
-      // Calculate sale details
-      const totalRevenue = selectedProduct.selling_price * quantity;
-      const totalCost = selectedProduct.purchase_price * quantity;
-      const totalProfit = totalRevenue - totalCost;
+      // Use the RPC function for atomic transaction
+      const { error } = await supabase.rpc('handle_new_sale', {
+        p_produk_id: selectedProductID,
+        p_jumlah_terjual: quantity,
+        p_status_pembayaran: isDebt ? 'Hutang' : 'Lunas',
+        p_pelanggan_id: isDebt ? selectedCustomerID : null
+      });
 
-      // Create sale record
-      const saleData = {
-        product_id: selectedProductID,
-        quantity_sold: quantity,
-        total_revenue: totalRevenue,
-        total_cost: totalCost,
-        total_profit: totalProfit,
-        payment_status: isDebt ? 'Hutang' : 'Lunas',
-        customer_id: isDebt ? selectedCustomerID : null
-      };
-
-      const { error: saleError } = await supabase
-        .from('sales')
-        .insert([saleData]);
-
-      if (saleError) throw saleError;
-
-      // Update product stock
-      const { error: updateError } = await supabase
-        .from('products')
-        .update({ current_stock: selectedProduct.current_stock - quantity })
-        .eq('id', selectedProductID);
-
-      if (updateError) throw updateError;
+      if (error) throw error;
 
       toast({
         title: "Transaksi berhasil!",
-        description: `Penjualan ${selectedProduct.product_name} sebanyak ${quantity} telah dicatat.`
+        description: `Penjualan ${selectedProduct.namaProduk} sebanyak ${quantity} telah dicatat.`
       });
 
       onSaleComplete();
@@ -267,12 +247,9 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                     <SelectContent>
                       {customers.map((customer) => (
                         <SelectItem key={customer.id} value={customer.id}>
-                          {customer.customer_name}
+                          {customer.namaPelanggan}
                         </SelectItem>
                       ))}
-                      <SelectItem value="add_new" onSelect={() => setShowAddCustomer(true)}>
-                        + Tambah Pelanggan Baru
-                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -328,7 +305,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
               <SelectContent>
                 {products.map((product) => (
                   <SelectItem key={product.id} value={product.id}>
-                    {product.product_name} - {formatCurrency(product.selling_price)} (Stok: {product.current_stock})
+                    {product.namaProduk} - {formatCurrency(product.hargaJual)} (Stok: {product.stokSaatIni})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -341,11 +318,11 @@ export const SalesModal: React.FC<SalesModalProps> = ({
               <div className="text-sm space-y-1">
                 <div className="flex justify-between">
                   <span>Harga Jual:</span>
-                  <span className="font-medium">{formatCurrency(selectedProduct.selling_price)}</span>
+                  <span className="font-medium">{formatCurrency(selectedProduct.hargaJual)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Stok Tersedia:</span>
-                  <span className="font-medium">{selectedProduct.current_stock}</span>
+                  <span className="font-medium">{selectedProduct.stokSaatIni}</span>
                 </div>
               </div>
             </div>
@@ -361,7 +338,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
               onChange={(e) => setQuantitySold(e.target.value)}
               placeholder="Masukkan jumlah yang terjual..."
               min="1"
-              max={selectedProduct?.current_stock || 1}
+              max={selectedProduct?.stokSaatIni || 1}
               required
             />
           </div>
@@ -373,13 +350,13 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                 <div className="flex justify-between">
                   <span>Total Penjualan:</span>
                   <span className="font-medium">
-                    {formatCurrency(selectedProduct.selling_price * parseInt(quantitySold))}
+                    {formatCurrency(selectedProduct.hargaJual * parseInt(quantitySold))}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Keuntungan:</span>
                   <span className="font-medium text-green-600">
-                    {formatCurrency((selectedProduct.selling_price - selectedProduct.purchase_price) * parseInt(quantitySold))}
+                    {formatCurrency((selectedProduct.hargaJual - selectedProduct.hargaBeli) * parseInt(quantitySold))}
                   </span>
                 </div>
                 <div className="flex justify-between">

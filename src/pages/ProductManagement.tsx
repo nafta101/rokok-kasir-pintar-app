@@ -12,11 +12,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface Product {
   id: string;
-  product_name: string;
-  purchase_price: number;
-  selling_price: number;
-  initial_stock: number;
-  current_stock: number;
+  namaProduk: string;
+  hargaBeli: number;
+  hargaJual: number;
+  stokSaatIni: number;
 }
 
 const ProductManagement = () => {
@@ -24,25 +23,73 @@ const ProductManagement = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState({
-    id: '',
-    product_name: '',
-    purchase_price: '',
-    selling_price: '',
-    initial_stock: ''
+    namaProduk: '',
+    hargaBeli: '',
+    hargaJual: '',
+    stokSaatIni: ''
   });
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchProducts();
+    setupRealtimeSubscriptions();
   }, []);
+
+  const setupRealtimeSubscriptions = () => {
+    const channel = supabase
+      .channel('products-management-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Produk'
+        },
+        (payload) => {
+          console.log('New product added:', payload);
+          setProducts(prev => [...prev, payload.new as Product]);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'Produk'
+        },
+        (payload) => {
+          console.log('Product updated:', payload);
+          setProducts(prev => prev.map(product => 
+            product.id === payload.new.id ? payload.new as Product : product
+          ));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'Produk'
+        },
+        (payload) => {
+          console.log('Product deleted:', payload);
+          setProducts(prev => prev.filter(product => product.id !== payload.old.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
 
   const fetchProducts = async () => {
     try {
       const { data, error } = await supabase
-        .from('products')
+        .from('Produk')
         .select('*')
-        .order('product_name');
+        .order('namaProduk');
 
       if (error) throw error;
       setProducts(data || []);
@@ -62,19 +109,17 @@ const ProductManagement = () => {
     e.preventDefault();
     
     const productData = {
-      id: formData.id,
-      product_name: formData.product_name,
-      purchase_price: parseFloat(formData.purchase_price),
-      selling_price: parseFloat(formData.selling_price),
-      initial_stock: parseInt(formData.initial_stock),
-      current_stock: editingProduct ? editingProduct.current_stock : parseInt(formData.initial_stock)
+      namaProduk: formData.namaProduk,
+      hargaBeli: parseFloat(formData.hargaBeli),
+      hargaJual: parseFloat(formData.hargaJual),
+      stokSaatIni: parseInt(formData.stokSaatIni)
     };
 
     try {
       if (editingProduct) {
         // Update existing product
         const { error } = await supabase
-          .from('products')
+          .from('Produk')
           .update(productData)
           .eq('id', editingProduct.id);
 
@@ -82,33 +127,22 @@ const ProductManagement = () => {
 
         toast({
           title: "Produk berhasil diperbarui",
-          description: `${productData.product_name} telah diperbarui.`
+          description: `${productData.namaProduk} telah diperbarui.`
         });
       } else {
         // Add new product
         const { error } = await supabase
-          .from('products')
+          .from('Produk')
           .insert([productData]);
 
-        if (error) {
-          if (error.code === '23505') { // Unique constraint violation
-            toast({
-              title: "Error",
-              description: "ID Produk sudah ada!",
-              variant: "destructive"
-            });
-            return;
-          }
-          throw error;
-        }
+        if (error) throw error;
 
         toast({
           title: "Produk berhasil ditambahkan",
-          description: `${productData.product_name} telah ditambahkan ke daftar produk.`
+          description: `${productData.namaProduk} telah ditambahkan ke daftar produk.`
         });
       }
 
-      fetchProducts(); // Refresh the list
       resetForm();
       setIsDialogOpen(false);
     } catch (error) {
@@ -124,11 +158,10 @@ const ProductManagement = () => {
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
     setFormData({
-      id: product.id,
-      product_name: product.product_name,
-      purchase_price: product.purchase_price.toString(),
-      selling_price: product.selling_price.toString(),
-      initial_stock: product.initial_stock.toString()
+      namaProduk: product.namaProduk,
+      hargaBeli: product.hargaBeli.toString(),
+      hargaJual: product.hargaJual.toString(),
+      stokSaatIni: product.stokSaatIni.toString()
     });
     setIsDialogOpen(true);
   };
@@ -137,13 +170,12 @@ const ProductManagement = () => {
     if (window.confirm('Apakah Anda yakin ingin menghapus produk ini?')) {
       try {
         const { error } = await supabase
-          .from('products')
+          .from('Produk')
           .delete()
           .eq('id', productId);
 
         if (error) throw error;
 
-        fetchProducts(); // Refresh the list
         toast({
           title: "Produk berhasil dihapus",
           description: "Produk telah dihapus dari daftar."
@@ -161,11 +193,10 @@ const ProductManagement = () => {
 
   const resetForm = () => {
     setFormData({
-      id: '',
-      product_name: '',
-      purchase_price: '',
-      selling_price: '',
-      initial_stock: ''
+      namaProduk: '',
+      hargaBeli: '',
+      hargaJual: '',
+      stokSaatIni: ''
     });
     setEditingProduct(null);
   };
@@ -216,55 +247,44 @@ const ProductManagement = () => {
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="id">ID Produk</Label>
+                  <Label htmlFor="namaProduk">Nama Produk</Label>
                   <Input
-                    id="id"
-                    value={formData.id}
-                    onChange={(e) => setFormData({...formData, id: e.target.value})}
-                    placeholder="contoh: GGM01"
-                    required
-                    disabled={!!editingProduct}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="product_name">Nama Produk</Label>
-                  <Input
-                    id="product_name"
-                    value={formData.product_name}
-                    onChange={(e) => setFormData({...formData, product_name: e.target.value})}
+                    id="namaProduk"
+                    value={formData.namaProduk}
+                    onChange={(e) => setFormData({...formData, namaProduk: e.target.value})}
                     placeholder="contoh: Gudang Garam Merah 12"
                     required
                   />
                 </div>
                 <div>
-                  <Label htmlFor="purchase_price">Harga Beli</Label>
+                  <Label htmlFor="hargaBeli">Harga Beli</Label>
                   <Input
-                    id="purchase_price"
+                    id="hargaBeli"
                     type="number"
-                    value={formData.purchase_price}
-                    onChange={(e) => setFormData({...formData, purchase_price: e.target.value})}
+                    value={formData.hargaBeli}
+                    onChange={(e) => setFormData({...formData, hargaBeli: e.target.value})}
                     placeholder="18000"
                     required
                   />
                 </div>
                 <div>
-                  <Label htmlFor="selling_price">Harga Jual</Label>
+                  <Label htmlFor="hargaJual">Harga Jual</Label>
                   <Input
-                    id="selling_price"
+                    id="hargaJual"
                     type="number"
-                    value={formData.selling_price}
-                    onChange={(e) => setFormData({...formData, selling_price: e.target.value})}
+                    value={formData.hargaJual}
+                    onChange={(e) => setFormData({...formData, hargaJual: e.target.value})}
                     placeholder="20000"
                     required
                   />
                 </div>
                 <div>
-                  <Label htmlFor="initial_stock">Stok Awal</Label>
+                  <Label htmlFor="stokSaatIni">Stok Awal</Label>
                   <Input
-                    id="initial_stock"
+                    id="stokSaatIni"
                     type="number"
-                    value={formData.initial_stock}
-                    onChange={(e) => setFormData({...formData, initial_stock: e.target.value})}
+                    value={formData.stokSaatIni}
+                    onChange={(e) => setFormData({...formData, stokSaatIni: e.target.value})}
                     placeholder="50"
                     required
                   />
@@ -299,11 +319,9 @@ const ProductManagement = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID Produk</TableHead>
                     <TableHead>Nama Produk</TableHead>
                     <TableHead>Harga Beli</TableHead>
                     <TableHead>Harga Jual</TableHead>
-                    <TableHead>Stok Awal</TableHead>
                     <TableHead>Stok Saat Ini</TableHead>
                     <TableHead>Aksi</TableHead>
                   </TableRow>
@@ -311,13 +329,11 @@ const ProductManagement = () => {
                 <TableBody>
                   {products.map((product) => (
                     <TableRow key={product.id}>
-                      <TableCell className="font-medium">{product.id}</TableCell>
-                      <TableCell>{product.product_name}</TableCell>
-                      <TableCell>{formatCurrency(product.purchase_price)}</TableCell>
-                      <TableCell>{formatCurrency(product.selling_price)}</TableCell>
-                      <TableCell>{product.initial_stock}</TableCell>
-                      <TableCell className={product.current_stock < 10 ? 'text-red-600 font-medium' : ''}>
-                        {product.current_stock}
+                      <TableCell className="font-medium">{product.namaProduk}</TableCell>
+                      <TableCell>{formatCurrency(product.hargaBeli)}</TableCell>
+                      <TableCell>{formatCurrency(product.hargaJual)}</TableCell>
+                      <TableCell className={product.stokSaatIni < 10 ? 'text-red-600 font-medium' : ''}>
+                        {product.stokSaatIni}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">

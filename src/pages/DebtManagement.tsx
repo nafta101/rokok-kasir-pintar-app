@@ -9,16 +9,16 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface Customer {
   id: string;
-  customer_name: string;
+  namaPelanggan: string;
   total_debt: number;
 }
 
 interface DebtTransaction {
   id: string;
-  product_id: string;
-  quantity_sold: number;
-  total_revenue: number;
-  sale_timestamp: string;
+  produk_id: string;
+  jumlahTerjual: number;
+  totalPendapatan: number;
+  created_at: string;
   product_name?: string;
 }
 
@@ -31,22 +31,48 @@ const DebtManagement = () => {
 
   useEffect(() => {
     fetchCustomersWithDebt();
+    setupRealtimeSubscriptions();
   }, []);
+
+  const setupRealtimeSubscriptions = () => {
+    const channel = supabase
+      .channel('debt-management-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'Penjualan'
+        },
+        (payload) => {
+          console.log('Sales data changed, refreshing debt data:', payload);
+          fetchCustomersWithDebt();
+          if (expandedCustomer) {
+            fetchCustomerDebtTransactions(expandedCustomer);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
 
   const fetchCustomersWithDebt = async () => {
     try {
       const { data: salesData, error } = await supabase
-        .from('sales')
+        .from('Penjualan')
         .select(`
-          customer_id,
-          total_revenue,
-          customers (
+          pelanggan_id,
+          totalPendapatan,
+          Pelanggan (
             id,
-            customer_name
+            namaPelanggan
           )
         `)
-        .eq('payment_status', 'Hutang')
-        .not('customer_id', 'is', null);
+        .eq('statusPembayaran', 'Hutang')
+        .not('pelanggan_id', 'is', null);
 
       if (error) throw error;
 
@@ -54,16 +80,16 @@ const DebtManagement = () => {
       const customerDebtMap = new Map<string, Customer>();
       
       salesData?.forEach((sale: any) => {
-        if (sale.customers) {
-          const customerId = sale.customer_id;
+        if (sale.Pelanggan) {
+          const customerId = sale.pelanggan_id;
           if (customerDebtMap.has(customerId)) {
             const existing = customerDebtMap.get(customerId)!;
-            existing.total_debt += Number(sale.total_revenue);
+            existing.total_debt += Number(sale.totalPendapatan);
           } else {
             customerDebtMap.set(customerId, {
               id: customerId,
-              customer_name: sale.customers.customer_name,
-              total_debt: Number(sale.total_revenue)
+              namaPelanggan: sale.Pelanggan.namaPelanggan,
+              total_debt: Number(sale.totalPendapatan)
             });
           }
         }
@@ -85,30 +111,30 @@ const DebtManagement = () => {
   const fetchCustomerDebtTransactions = async (customerId: string) => {
     try {
       const { data, error } = await supabase
-        .from('sales')
+        .from('Penjualan')
         .select(`
           id,
-          product_id,
-          quantity_sold,
-          total_revenue,
-          sale_timestamp,
-          products (
-            product_name
+          produk_id,
+          jumlahTerjual,
+          totalPendapatan,
+          created_at,
+          Produk (
+            namaProduk
           )
         `)
-        .eq('customer_id', customerId)
-        .eq('payment_status', 'Hutang')
-        .order('sale_timestamp', { ascending: false });
+        .eq('pelanggan_id', customerId)
+        .eq('statusPembayaran', 'Hutang')
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       const transactions = data?.map((sale: any) => ({
         id: sale.id,
-        product_id: sale.product_id,
-        quantity_sold: sale.quantity_sold,
-        total_revenue: sale.total_revenue,
-        sale_timestamp: sale.sale_timestamp,
-        product_name: sale.products?.product_name || 'Produk tidak ditemukan'
+        produk_id: sale.produk_id,
+        jumlahTerjual: sale.jumlahTerjual,
+        totalPendapatan: sale.totalPendapatan,
+        created_at: sale.created_at,
+        product_name: sale.Produk?.namaProduk || 'Produk tidak ditemukan'
       })) || [];
 
       setDebtTransactions(transactions);
@@ -135,8 +161,8 @@ const DebtManagement = () => {
   const markAsPaid = async (transactionId: string, customerId: string) => {
     try {
       const { error } = await supabase
-        .from('sales')
-        .update({ payment_status: 'Lunas' })
+        .from('Penjualan')
+        .update({ statusPembayaran: 'Lunas' })
         .eq('id', transactionId);
 
       if (error) throw error;
@@ -146,9 +172,7 @@ const DebtManagement = () => {
         description: "Transaksi telah ditandai sebagai lunas"
       });
 
-      // Refresh data
-      await fetchCustomerDebtTransactions(customerId);
-      await fetchCustomersWithDebt();
+      // Real-time subscriptions will automatically refresh the data
     } catch (error) {
       console.error('Error marking transaction as paid:', error);
       toast({
@@ -213,7 +237,7 @@ const DebtManagement = () => {
                           <ChevronRight className="h-5 w-5" />
                         )}
                         <div>
-                          <h3 className="font-semibold">{customer.customer_name}</h3>
+                          <h3 className="font-semibold">{customer.namaPelanggan}</h3>
                           <p className="text-sm text-gray-600">Total Hutang: {formatCurrency(customer.total_debt)}</p>
                         </div>
                       </div>
@@ -237,10 +261,10 @@ const DebtManagement = () => {
                               <TableBody>
                                 {debtTransactions.map((transaction) => (
                                   <TableRow key={transaction.id}>
-                                    <TableCell>{formatDate(transaction.sale_timestamp)}</TableCell>
+                                    <TableCell>{formatDate(transaction.created_at)}</TableCell>
                                     <TableCell>{transaction.product_name}</TableCell>
-                                    <TableCell>{transaction.quantity_sold}</TableCell>
-                                    <TableCell>{formatCurrency(transaction.total_revenue)}</TableCell>
+                                    <TableCell>{transaction.jumlahTerjual}</TableCell>
+                                    <TableCell>{formatCurrency(transaction.totalPendapatan)}</TableCell>
                                     <TableCell>
                                       <Button
                                         size="sm"
