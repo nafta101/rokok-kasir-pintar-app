@@ -250,9 +250,9 @@ const Index = () => {
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Stok:</span>
                         <span className={`font-medium flex items-center gap-1 ${
-                          product.stokSaatIni < 10 ? 'text-red-600' : 'text-green-600'
+                          product.stokSaatIni < 3 ? 'text-red-600' : 'text-green-600'
                         }`}>
-                          {product.stokSaatIni < 10 && <AlertTriangle className="h-4 w-4" />}
+                          {product.stokSaatIni < 3 && <AlertTriangle className="h-4 w-4" />}
                           {product.stokSaatIni}
                         </span>
                       </div>

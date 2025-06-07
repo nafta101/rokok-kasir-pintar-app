@@ -41,6 +41,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
   const [selectedCustomerID, setSelectedCustomerID] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
   const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -154,13 +155,22 @@ export const SalesModal: React.FC<SalesModalProps> = ({
     if (quantity > selectedProduct.stokSaatIni) {
       toast({
         title: "Error",
-        description: `Stok tidak mencukupi! Stok tersisa: ${selectedProduct.stokSaatIni}`,
+        description: `Stok tidak mencukupi! Stok tersedia: ${selectedProduct.stokSaatIni}`,
         variant: "destructive"
       });
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
+      console.log('Calling handle_new_sale with params:', {
+        p_produk_id: selectedProductID,
+        p_jumlah_terjual: quantity,
+        p_status_pembayaran: isDebt ? 'Hutang' : 'Lunas',
+        p_pelanggan_id: isDebt ? selectedCustomerID : null
+      });
+
       // Use the RPC function for atomic transaction
       const { error } = await supabase.rpc('handle_new_sale', {
         p_produk_id: selectedProductID,
@@ -169,7 +179,10 @@ export const SalesModal: React.FC<SalesModalProps> = ({
         p_pelanggan_id: isDebt ? selectedCustomerID : null
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('RPC Error details:', error);
+        throw error;
+      }
 
       toast({
         title: "Transaksi berhasil!",
@@ -179,13 +192,15 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       onSaleComplete();
       resetForm();
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving sale:', error);
       toast({
         title: "Error",
-        description: "Gagal menyimpan transaksi",
+        description: error.message || "Gagal menyimpan transaksi",
         variant: "destructive"
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -322,7 +337,9 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span>Stok Tersedia:</span>
-                  <span className="font-medium">{selectedProduct.stokSaatIni}</span>
+                  <span className={`font-medium ${selectedProduct.stokSaatIni < 3 ? 'text-red-600' : 'text-green-600'}`}>
+                    {selectedProduct.stokSaatIni}
+                  </span>
                 </div>
               </div>
             </div>
@@ -370,10 +387,14 @@ export const SalesModal: React.FC<SalesModalProps> = ({
           )}
 
           <div className="flex gap-2 pt-4">
-            <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700">
-              Simpan Transaksi
+            <Button 
+              type="submit" 
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Menyimpan...' : 'Simpan Transaksi'}
             </Button>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
               Batal
             </Button>
           </div>
