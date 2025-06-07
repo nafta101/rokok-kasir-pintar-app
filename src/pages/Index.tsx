@@ -25,11 +25,8 @@ const Index = () => {
     fetchProducts();
     fetchTodayProfit();
     fetchTotalOutstandingDebt();
-    setupRealtimeSubscriptions();
-  }, []);
 
-  const setupRealtimeSubscriptions = () => {
-    // Subscribe to product updates for real-time stock changes
+    // Setup realtime subscriptions
     const productsChannel = supabase
       .channel('products-changes')
       .on(
@@ -105,11 +102,13 @@ const Index = () => {
       )
       .subscribe();
 
+    // Cleanup function to remove channels on component unmount
     return () => {
+      console.log('Cleaning up realtime subscriptions');
       supabase.removeChannel(productsChannel);
       supabase.removeChannel(salesChannel);
     };
-  };
+  }, []); // Empty dependency array to run only once
 
   const fetchProducts = async () => {
     try {
