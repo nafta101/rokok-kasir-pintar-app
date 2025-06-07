@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,10 +30,8 @@ const DebtManagement = () => {
 
   useEffect(() => {
     fetchCustomersWithDebt();
-    setupRealtimeSubscriptions();
-  }, []);
 
-  const setupRealtimeSubscriptions = () => {
+    // Setup realtime subscription
     const channel = supabase
       .channel('debt-management-changes')
       .on(
@@ -46,17 +43,26 @@ const DebtManagement = () => {
         },
         (payload) => {
           console.log('Sales data changed, refreshing debt data:', payload);
-          fetchCustomersWithDebt();
-          if (expandedCustomer) {
-            fetchCustomerDebtTransactions(expandedCustomer);
-          }
+          handleRealtimeUpdate(payload);
         }
       )
       .subscribe();
 
+    // Cleanup function
     return () => {
+      console.log('Cleaning up debt management realtime subscription');
       supabase.removeChannel(channel);
     };
+  }, []);
+
+  const handleRealtimeUpdate = async (payload: any) => {
+    // Refresh the customer list to reflect updated debt totals
+    await fetchCustomersWithDebt();
+    
+    // If a customer is expanded and the update involves that customer, refresh their transactions
+    if (expandedCustomer && payload.new?.pelanggan_id === expandedCustomer) {
+      await fetchCustomerDebtTransactions(expandedCustomer);
+    }
   };
 
   const fetchCustomersWithDebt = async () => {
@@ -95,7 +101,15 @@ const DebtManagement = () => {
         }
       });
 
-      setCustomers(Array.from(customerDebtMap.values()));
+      // Filter out customers with zero or negative debt and update state
+      const customersWithDebt = Array.from(customerDebtMap.values()).filter(customer => customer.total_debt > 0);
+      setCustomers(customersWithDebt);
+
+      // If the currently expanded customer no longer has debt, close the expansion
+      if (expandedCustomer && !customersWithDebt.find(customer => customer.id === expandedCustomer)) {
+        setExpandedCustomer(null);
+        setDebtTransactions([]);
+      }
     } catch (error) {
       console.error('Error fetching customers with debt:', error);
       toast({
@@ -173,6 +187,8 @@ const DebtManagement = () => {
       });
 
       // Real-time subscriptions will automatically refresh the data
+      // But we can also manually update the local state for immediate feedback
+      setDebtTransactions(prev => prev.filter(transaction => transaction.id !== transactionId));
     } catch (error) {
       console.error('Error marking transaction as paid:', error);
       toast({
